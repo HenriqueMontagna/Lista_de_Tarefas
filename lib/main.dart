@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' as prefix0;
 import 'package:path_provider/path_provider.dart';
 import 'dart:async';
 
@@ -18,6 +19,18 @@ class _HomeState extends State<Home> {
   final _toDoController = TextEditingController();
 
   List _toDoList = [];
+  Map<String, dynamic> _lastRemoved;
+  int _lastRemovedPosicao;
+
+  @override
+  void initState() {
+    super.initState();
+    _readData().then((data) {
+      setState(() {
+        _toDoList = json.decode(data);
+      });
+    });
+  }
 
   void addToDo() {
     Map<String, dynamic> newToDo = Map();
@@ -26,15 +39,37 @@ class _HomeState extends State<Home> {
       _toDoController.text = "";
       newToDo["ok"] = false;
       _toDoList.add(newToDo);
+      _saveData();
     });
+  }
+
+  Future<Null> _refresh()async{
+    await Future.delayed((Duration(seconds: 1)));
+      setState(() {
+        _toDoList.sort((a, b){
+          if(a["ok"] && !b["ok"]){
+            return 1;
+          }
+          else if (!a["ok"] && b["ok"]){
+            return -1;
+          }
+          else{
+            return 0;
+          }
+        });
+        _saveData();
+      });
+      return null;
   }
 
   Widget colorChange(int index) {
     if (_toDoList[index]["ok"] == true) {
       return CircleAvatar(
-        backgroundColor: Colors.green,
-        child: Icon(Icons.check, color: Colors.white,
-      ));
+          backgroundColor: Colors.green,
+          child: Icon(
+            Icons.check,
+            color: Colors.white,
+          ));
     } else {
       return CircleAvatar(
         backgroundColor: Colors.blueAccent,
@@ -76,33 +111,68 @@ class _HomeState extends State<Home> {
             ),
           ),
           Expanded(
-            child: ListView.builder(
-              padding: EdgeInsets.only(top: 10.0),
-              itemCount: _toDoList.length,
-              itemBuilder: (context, index) {
-                return CheckboxListTile(
-                  title: Text(_toDoList[index]["title"]),
-                  value: _toDoList[index]["ok"],
-                  secondary: CircleAvatar(
-                    child: colorChange(index),
-                  ),
-                  onChanged: (bool value) {
-                    if (_toDoList[index]["ok"] == false) {
-                      setState(() {
-                        _toDoList[index]["ok"] = true;
-                      });
-                    } else {
-                      setState(() {
-                        _toDoList[index]["ok"] = false;
-                      });
-                    }
-                  },
-                );
-              },
-            ),
-          ),
+              child: RefreshIndicator(
+                onRefresh: _refresh,
+                child: ListView.builder(
+                  padding: EdgeInsets.only(top: 10.0),
+                  itemCount: _toDoList.length,
+                  itemBuilder: _buildItem),
+          )),
         ],
       ),
+    );
+  }
+
+  Widget _buildItem(context, index) {
+    return Dismissible(
+      key: Key(DateTime.now().millisecondsSinceEpoch.toString()),
+      background: Container(
+        color: Colors.red,
+        child: Align(
+          alignment: Alignment(-0.9, 0.0),
+          child: Icon(
+            Icons.delete,
+            color: Colors.white,
+          ),
+        ),
+      ),
+      direction: DismissDirection.startToEnd,
+      child: CheckboxListTile(
+        title: Text(_toDoList[index]["title"]),
+        value: _toDoList[index]["ok"],
+        secondary: CircleAvatar(
+          child: colorChange(index),
+        ),
+        onChanged: (bool value) {
+          setState(() {
+            _toDoList[index]["ok"] = value;
+            _saveData();
+          });
+        },
+      ),
+      onDismissed: (direcao) {
+        setState(() {
+          _lastRemoved = Map.from(_toDoList[index]);
+          _lastRemovedPosicao = index;
+          _toDoList.removeAt(index);
+          _saveData();
+          final snack = SnackBar(
+            content: Text("Tarefa \"${_lastRemoved["title"]}\" Removida!"),
+            action: SnackBarAction(
+              label: "Desfazer",
+              onPressed: () {
+                setState(() {
+                  _toDoList.insert(_lastRemovedPosicao, _lastRemoved);
+                  _saveData();
+                });
+              },
+            ),
+            duration: Duration(seconds: 3),
+          );
+          Scaffold.of(context).removeCurrentSnackBar();
+          Scaffold.of(context).showSnackBar(snack);
+        });
+      },
     );
   }
 
